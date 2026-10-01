@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screensavers</title>
+<style>
+  :root { --bg: #f4efe4; --fg: #2a2621; --muted: #6f675c; --card: #fffdf8; --line: #ddd4c3; --accent: #b22222; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #171512; --fg: #ece6da; --muted: #a39a8c; --card: #221f1a; --line: #3a352d; --accent: #e0574f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 Georgia, "Songti SC", serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 48px 16px 64px; }
+  h1 { font-size: 2.2rem; margin: 0 0 .25rem; font-weight: 600; }
+  .lede { color: var(--muted); margin: 0 0 2.5rem; max-width: 60ch; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .card img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-bottom: 1px solid var(--line); }
+  .body { padding: 16px 18px 18px; }
+  .card h2 { margin: 0 0 .25rem; font-size: 1.25rem; }
+  .card p { margin: 0 0 1rem; color: var(--muted); font-size: .95rem; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn { font: 14px/1 system-ui, sans-serif; padding: 9px 12px; border-radius: 6px; border: 1px solid var(--line);
+         background: transparent; color: var(--fg); text-decoration: none; cursor: pointer; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  code { font-size: .85em; word-break: break-all; }
+  footer { margin-top: 3rem; color: var(--muted); font-size: .9rem; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Screensavers</h1>
+  <p class="lede">Web-based screensavers for the macOS lock screen. Install
+    <a href="https://github.com/liquidx/webviewscreensaver">WebViewScreenSaver</a>, then paste one of these URLs into its options.
+    Setup steps are in the <a href="https://github.com/rajathpi/screensavers#setup-on-a-mac-one-time">README</a>.</p>
+
+  <div class="grid">
+    <article class="card">
+      <img src="shan-shui/preview.jpg" alt="Ink-wash landscape with pine trees, distant mountains and a boat on a lake">
+      <div class="body">
+        <h2>Shan Shui</h2>
+        <p>Endless Chinese ink landscape, slowly unrolling like a handscroll. Every screen shows a different painting.</p>
+        <div class="row">
+          <a class="btn primary" href="shan-shui/">Open</a>
+          <button class="btn" data-path="shan-shui/">Copy URL</button>
+          <a class="btn" href="shan-shui/?clock=1">With clock</a>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <footer>Source on <a href="https://github.com/rajathpi/screensavers">GitHub</a>.</footer>
+</main>
+<script>
+  document.querySelectorAll("[data-path]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var url = new URL(b.dataset.path, location.href).href;
+      navigator.clipboard.writeText(url).then(function () {
+        b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy URL"; }, 1500);
+      }, function () { prompt("Copy this URL:", url); });
+    });
+  });
+</script>
+</body>
+</html>

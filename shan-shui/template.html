@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shan Shui Scroll</title>
+<!--
+  Endless Chinese landscape handscroll, made as a screensaver.
+  Landscape generator: shan-shui-inf by Lingdong Huang (MIT), https://github.com/LingDong-/shan-shui-inf
+  URL options:  ?speed=14   world units per second (default 14; try 8 for slower, 30 for faster)
+                ?dir=ltr    scenery travels left→right, like a handscroll unrolled (default)
+                ?dir=rtl    scenery travels right→left
+                ?clock=1    show a small red seal clock in the corner
+                ?seed=abc   fix the landscape (default: new one every time, so each screen differs)
+-->
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #efe8d8; cursor: none; }
+  #paper { position: fixed; inset: 0; background-color: #efe8d8; }
+  #stage { position: fixed; inset: 0; opacity: 0; transition: opacity 3s ease; mix-blend-mode: multiply; }
+  #stage.on { opacity: 1; }
+  #stage img { position: absolute; top: 0; left: 0; will-change: transform;
+               user-select: none; pointer-events: none; }
+  #vignette { position: fixed; inset: 0; pointer-events: none; mix-blend-mode: multiply;
+              background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(90,60,30,.22) 100%); }
+  #seal { position: fixed; right: 3vw; bottom: 4vh; display: none; padding: .35em .3em;
+          border: 2px solid rgba(178,34,34,.85); border-radius: 4px; color: rgba(178,34,34,.9);
+          font: 600 clamp(14px, 2.2vh, 30px)/1.05 "Songti SC", "STSong", Georgia, serif;
+          writing-mode: vertical-rl; letter-spacing: .08em; mix-blend-mode: multiply; }
+</style>
+</head>
+<body>
+<div id="paper"></div>
+<div id="stage"></div>
+<div id="vignette"></div>
+<div id="seal"></div>
+
+<script type="text/plain" id="gen">
+/*__GEN__*/
+
+// ---- screensaver bridge (added) ----
+var PANEL_MARGIN = 1200; // world units of neighbouring chunks drawn into each panel so shapes cross seams intact
+function handle(m) {
+  if (m.type === "paper") {
+    var reso = 512, buf = new Uint8ClampedArray(reso * reso * 4);
+    function put(x, y, r, g, b) {
+      if (x < 0 || y < 0 || x >= reso || y >= reso) return;
+      var o = (y * reso + x) * 4; buf[o] = r; buf[o + 1] = g; buf[o + 2] = b; buf[o + 3] = 255;
+    }
+    for (var i = 0; i < reso / 2 + 1; i++) {
+      for (var j = 0; j < reso / 2 + 1; j++) {
+        var c = 245 + Noise.noise(i * 0.1, j * 0.1) * 10;
+        c -= Math.random() * 20;
+        var r = Math.round(c), g = Math.round(c * 0.95), b = Math.round(c * 0.85);
+        put(i, j, r, g, b); put(reso - i, j, r, g, b); put(i, reso - j, r, g, b); put(reso - i, reso - j, r, g, b);
+      }
+    }
+    return { type: "paper", reso: reso, data: buf };
+  }
+  if (m.type === "panel") {
+    var a = m.x0 - PANEL_MARGIN, b = m.x0 + m.w + PANEL_MARGIN;
+    chunkloader(a, b);
+    var s = "";
+    for (var i = 0; i < MEM.chunks.length; i++) {
+      var x = MEM.chunks[i].x;
+      if (a < x && x < b) s += MEM.chunks[i].canv;
+    }
+    // forget chunks far away so an hour-long lunch doesn't eat memory
+    MEM.chunks = MEM.chunks.filter(function (ch) { return Math.abs(ch.x - m.x0) < 8000; });
+    var svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='" + m.x0 + " 0 " + m.w + " " + m.h +
+      "' width='" + m.pw + "' height='" + m.ph + "' preserveAspectRatio='none'>" + s + "</svg>";
+    return { type: "panel", k: m.k, svg: svg };
+  }
+}
+</script>
+
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var seed = q.get("seed") || (Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+  var speed = parseFloat(q.get("speed")) || 14;
+  var dir = q.get("dir") === "rtl" ? 1 : -1;          // camera direction; ltr scenery = camera moving left
+  var VH = 700;                                        // world height visible in the original (800 / 1.142)
+  var W = innerWidth, H = innerHeight, dpr = devicePixelRatio || 1;
+  var scale = H / VH;
+  var P = Math.max(256, Math.round(1024 * scale));     // panel width in CSS px (integer => seamless joins)
+  var PW = P / scale;                                  // panel width in world units
+  var viewW = W / scale;
+
+  var stage = document.getElementById("stage"), paper = document.getElementById("paper");
+  var panels = {};                                     // k -> {img, url}
+  var cam = 0, busy = false, started = false, last = 0;
+
+  // ---- generator: in a Web Worker if possible, else on the main thread ----
+  var code = document.getElementById("gen").textContent;
+  var prelude = "var window = self; console.log = function(){}; var SEED = " + JSON.stringify(seed) + ";\n";
+  var worker = null, local = null;
+  function useLocal() {
+    if (local) return;
+    worker = null;
+    var quiet = console.log; console.log = function () {};
+    local = new Function("SEED", code + "\nreturn handle;")(seed);
+    console.log = quiet;
+    busy = false; send({ type: "paper" }); pump();
+  }
+  try {
+    var url = URL.createObjectURL(new Blob([prelude + code + "\nonmessage = function(e){ postMessage(handle(e.data)); };"],
+                                           { type: "text/javascript" }));
+    worker = new Worker(url);
+    worker.onmessage = function (e) { receive(e.data); };
+    worker.onerror = function (e) { e.preventDefault && e.preventDefault(); useLocal(); };
+  } catch (err) { worker = null; }
+
+  function send(m) {
+    if (worker) worker.postMessage(m);
+    else if (local) setTimeout(function () { receive(local(m)); }, 0);
+    else useLocal(), local && setTimeout(function () { receive(local(m)); }, 0);
+  }
+
+  function receive(r) {
+    if (!r) return;
+    if (r.type === "paper") {
+      var c = document.createElement("canvas"); c.width = c.height = r.reso;
+      c.getContext("2d").putImageData(new ImageData(r.data, r.reso, r.reso), 0, 0);
+      paper.style.backgroundImage = "url(" + c.toDataURL("image/png") + ")";
+      return;
+    }
+    busy = false;
+    var url = URL.createObjectURL(new Blob([r.svg], { type: "image/svg+xml" }));
+    var img = new Image();
+    img.width = P; img.height = H; img.alt = "";
+    img.src = url;
+    var done = function () {
+      if (panels[r.k]) { URL.revokeObjectURL(url); return; }
+      panels[r.k] = { img: img, url: url };
+      place(img, r.k);
+      stage.appendChild(img);
+      pump();
+    };
+    (img.decode ? img.decode() : Promise.resolve()).then(done, done);
+    pump();
+  }
+
+  function offset() { return Math.round(cam * scale * dpr) / dpr; }
+  function place(img, k) { img.style.transform = "translate3d(" + (k * P - offset()) + "px,0,0)"; }
+
+  function visibleRange() { return [Math.floor(cam / PW), Math.floor((cam + viewW) / PW)]; }
+  function wanted() {
+    var v = visibleRange(), list = [];
+    for (var k = v[0]; k <= v[1]; k++) list.push(k);
+    for (var i = 1; i <= 2; i++) list.push(dir > 0 ? v[1] + i : v[0] - i);   // look ahead
+    return list;
+  }
+  function pump() {
+    if (busy || (!worker && !local)) return;
+    var list = wanted();
+    for (var i = 0; i < list.length; i++) {
+      var k = list[i];
+      if (!panels[k]) {
+        busy = true;
+        send({ type: "panel", k: k, x0: k * PW, w: PW, h: VH, pw: P, ph: H });
+        return;
+      }
+    }
+  }
+  function visibleReady() {
+    var v = visibleRange();
+    for (var k = v[0]; k <= v[1]; k++) if (!panels[k]) return false;
+    return true;
+  }
+
+  function frame() {
+    var t = performance.now();
+    var dt = last ? Math.min(0.1, (t - last) / 1000) : 0; last = t;
+    if (!started && visibleReady()) { started = true; stage.classList.add("on"); }
+    if (started && visibleReady()) cam += dir * speed * dt;   // never scroll into a blank, wait for paint
+    var off = offset();
+    paper.style.backgroundPosition = (-off) + "px 0";
+    var v = visibleRange();
+    for (var k in panels) {
+      var kk = +k, p = panels[k];
+      if (kk < v[0] - 2 || kk > v[1] + 3) {                  // far behind: drop it
+        stage.removeChild(p.img); URL.revokeObjectURL(p.url); delete panels[k]; continue;
+      }
+      p.img.style.transform = "translate3d(" + (kk * P - off) + "px,0,0)";
+    }
+    pump();
+  }
+
+  // Drive with animation frames; if the host stops delivering them, a timer keeps the scroll going
+  var lastRaf = 0;
+  function raf() { lastRaf = performance.now(); frame(); requestAnimationFrame(raf); }
+  setInterval(function () { if (performance.now() - lastRaf > 250) frame(); }, 50);
+
+  if (worker) send({ type: "paper" });
+  pump();
+  requestAnimationFrame(raf);
+
+  if (q.get("clock") === "1") {
+    var seal = document.getElementById("seal"); seal.style.display = "block";
+    var tick = function () {
+      var d = new Date();
+      seal.textContent = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    };
+    tick(); setInterval(tick, 10000);
+  }
+
+  var rt; addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { location.reload(); }, 500); });
+})();
+</script>
+</body>
+</html>
