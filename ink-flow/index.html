@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ink Flow</title>
+<!--
+  Thousands of ink particles trace an invisible flow field, slowly building a drawing.
+  When a drawing matures it fades away and a new field takes over.
+  URL options:  ?palette=ink     ink, night, ember or sea (default ink)
+                ?minutes=4       how long each drawing builds before it fades
+                ?density=1       particle count multiplier
+-->
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; cursor: none; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var PALETTES = {
+    ink:   { bg: [239, 232, 216], ink: [[30, 28, 26], [60, 52, 46], [150, 40, 30]] },
+    night: { bg: [12, 16, 30],    ink: [[200, 214, 240], [130, 160, 220], [240, 200, 140]] },
+    ember: { bg: [20, 12, 10],    ink: [[255, 150, 70], [240, 90, 50], [255, 220, 150]] },
+    sea:   { bg: [232, 238, 236], ink: [[20, 70, 90], [40, 120, 130], [200, 120, 60]] }
+  };
+  var pal = PALETTES[q.get("palette")] || PALETTES.ink;
+  var minutes = Math.max(.5, parseFloat(q.get("minutes")) || 4);
+  var density = Math.max(.1, Math.min(4, parseFloat(q.get("density")) || 1));
+  var bg = "rgb(" + pal.bg.join(",") + ")";
+  document.body.style.background = bg;
+
+  var canvas = document.getElementById("c"), ctx = canvas.getContext("2d");
+  var dpr = Math.min(devicePixelRatio || 1, 2), W, H;
+
+  // Improved Perlin noise, reseeded for every drawing.
+  var perm = new Uint8Array(512);
+  function reseed() {
+    var p = []; for (var i = 0; i < 256; i++) p[i] = i;
+    for (i = 255; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = p[i]; p[i] = p[j]; p[j] = t; }
+    for (i = 0; i < 512; i++) perm[i] = p[i & 255];
+  }
+  function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+  function lerp(a, b, t) { return a + t * (b - a); }
+  function grad(h, x, y, z) {
+    var u = (h & 15) < 8 ? x : y, v = (h & 15) < 4 ? y : ((h & 15) === 12 || (h & 15) === 14 ? x : z);
+    return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
+  }
+  function noise(x, y, z) {
+    var X = Math.floor(x) & 255, Y = Math.floor(y) & 255, Z = Math.floor(z) & 255;
+    x -= Math.floor(x); y -= Math.floor(y); z -= Math.floor(z);
+    var u = fade(x), v = fade(y), w = fade(z);
+    var A = perm[X] + Y, AA = perm[A] + Z, AB = perm[A + 1] + Z, B = perm[X + 1] + Y, BA = perm[B] + Z, BB = perm[B + 1] + Z;
+    return lerp(lerp(lerp(grad(perm[AA], x, y, z), grad(perm[BA], x - 1, y, z), u),
+                     lerp(grad(perm[AB], x, y - 1, z), grad(perm[BB], x - 1, y - 1, z), u), v),
+                lerp(lerp(grad(perm[AA + 1], x, y, z - 1), grad(perm[BA + 1], x - 1, y, z - 1), u),
+                     lerp(grad(perm[AB + 1], x, y - 1, z - 1), grad(perm[BB + 1], x - 1, y - 1, z - 1), u), v), w);
+  }
+
+  var parts = [], field, z, started, fading = 0;
+  function newDrawing() {
+    reseed();
+    var s = Math.min(W, H);
+    field = { scale: (.9 + Math.random() * 1.8) / s, curl: 1.5 + Math.random() * 2.5, step: s * (.0012 + Math.random() * .0012) };
+    z = Math.random() * 100;
+    var n = Math.round(W * H / 900 * density);
+    parts.length = 0;
+    for (var i = 0; i < n; i++) parts.push(spawn({}));
+    started = performance.now();
+  }
+  function spawn(p) {
+    p.x = Math.random() * W; p.y = Math.random() * H;
+    p.life = 60 + Math.random() * 240;
+    var r = Math.random();
+    p.c = r < .82 ? 0 : r < .97 ? 1 : 2;
+    return p;
+  }
+
+  function resize() {
+    W = innerWidth; H = innerHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    newDrawing();
+  }
+  addEventListener("resize", resize);
+  resize();
+
+  var styles = pal.ink.map(function (c) { return "rgba(" + c.join(",") + ",.07)"; });
+  function frame(now) {
+    requestAnimationFrame(frame);
+    var age = (now - started) / 60000;
+    if (age > minutes && !fading) fading = 1;
+    if (fading) {
+      ctx.fillStyle = "rgba(" + pal.bg.join(",") + ",.035)";
+      ctx.fillRect(0, 0, W, H);
+      if (++fading > 150) { ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H); fading = 0; newDrawing(); }
+      return;
+    }
+    z += .0006;
+    ctx.lineWidth = .9;
+    for (var c = 0; c < 3; c++) {
+      ctx.strokeStyle = styles[c];
+      ctx.beginPath();
+      for (var i = 0; i < parts.length; i++) {
+        var p = parts[i]; if (p.c !== c) continue;
+        var a = noise(p.x * field.scale, p.y * field.scale, z) * Math.PI * field.curl;
+        var nx = p.x + Math.cos(a) * field.step, ny = p.y + Math.sin(a) * field.step;
+        ctx.moveTo(p.x, p.y); ctx.lineTo(nx, ny);
+        p.x = nx; p.y = ny;
+        if (--p.life < 0 || nx < 0 || ny < 0 || nx > W || ny > H) spawn(p);
+      }
+      ctx.stroke();
+    }
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

@@ -7,6 +7,8 @@ Gallery: **https://rajathpi.github.io/screensavers/**
 | Screensaver | Preview | URL |
 |---|---|---|
 | [Shan Shui](shan-shui/) | Endless Chinese ink landscape, slowly scrolling. Different on every screen. | `https://rajathpi.github.io/screensavers/shan-shui/` |
+| [Peekaboo](peekaboo/) | A little ink cat pops in now and then and does something different every time. | `https://rajathpi.github.io/screensavers/peekaboo/` |
+| [Ink Flow](ink-flow/) | Ink particles trace a flow field into a drawing, then start a new one. | `https://rajathpi.github.io/screensavers/ink-flow/` |
 
 ## Setup on a Mac (one time)
 
@@ -42,4 +44,4 @@ Laptop tip: keep the lid open or the charger connected. Closing the lid on batte
 node tools/screenshot.mjs "http://localhost:8047/my-design/" my-design/preview.jpg 15000
 ```
 
-Serve locally with `python -m http.server 8047` from the repo root.
+Serve locally with `python -m http.server 8047` from the repo root. Set `CHROME` to override the browser path.

@@ -2,7 +2,11 @@ import { spawn } from "node:child_process";
 import { writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os"; import { join } from "node:path";
 const [url, out, wait = "15000"] = process.argv.slice(2);
-const chrome = spawn("C:/Program Files/Google/Chrome/Application/chrome.exe",
+const CHROME = process.env.CHROME || {
+  win32: "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  darwin: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+}[process.platform] || "google-chrome";
+const chrome = spawn(CHROME,
   ["--headless=new", "--remote-debugging-port=9333", "--window-size=1920,1080", "--hide-scrollbars",
    "--user-data-dir=" + mkdtempSync(join(tmpdir(), "cdp")), "about:blank"], { stdio: "ignore" });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -15,7 +19,7 @@ const send = (method, params = {}) => new Promise(r => { pending[++id] = r; ws.s
 await send("Emulation.setDeviceMetricsOverride", { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
 await send("Page.navigate", { url });
 await sleep(+wait);
-const st = await send("Runtime.evaluate", { expression: "document.images.length + ' imgs, stage=' + document.getElementById('stage').className", returnByValue: true });
+const st = await send("Runtime.evaluate", { expression: "document.title + ': ' + document.images.length + ' imgs'", returnByValue: true });
 console.log(st.result.value);
 const shot = await send("Page.captureScreenshot", { format: "jpeg", quality: 85 });
 writeFileSync(out, Buffer.from(shot.data, "base64")); console.log("saved", out);
